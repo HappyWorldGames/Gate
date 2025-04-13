@@ -94,13 +94,14 @@ void loop() {
   handleButton();
   checkLimitSwitches();
   checkMagnetDelay();
-  checkMovementTime();
+  // moved to updateMotorSpeed checkMovementTime();
   updateMotorSpeed();
   checkInactivity();
   Serial.flush();
 }
 
 void checkMovementTime()  {
+  // Добавить задержку
   if (currentState != STOP) {
     Serial.println("Check Movement");
     // Подсчет времени
@@ -208,6 +209,8 @@ void checkLimitSwitches() {
 void updateMotorSpeed() {
   if(millis() - lastAccelTime >= accelerationInterval) {
     lastAccelTime = millis();
+
+    checkMovementTime();
     
     if(isStopping) {
       currentSpeed = max(currentSpeed - accelerationStep, 0);
