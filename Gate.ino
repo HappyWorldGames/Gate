@@ -95,20 +95,25 @@ void loop() {
   checkMovementTime();
   updateMotorSpeed();
   checkInactivity();
+  Serial.flush();
 }
 
 void checkMovementTime()  {
   if (currentState != STOP) {
+    Serial.println("Check Movement");
     // Подсчет времени
     if (currentState != previewStateTime) {
+      Serial.println("Revers moveTime");
       int fullTime = currentState == OPENING ? fullOpenTime : fullCloseTime;
       int rfullTime = currentState == OPENING ? fullCloseTime : fullOpenTime;
       moveTime = moveTimeRevers(moveTime, fullTime, rfullTime);
       previewStateTime = currentState;
     }
     moveTime += millis() - tempMoveTime;
+    Serial.println("moveTime = " + moveTime);
     // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
     if ((fullOpenTime != -1 && fullCloseTime != -1) && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > currentState == OPENING ? fullOpenTime : fullCloseTime) {
+      Serial.println("Check Movement stopping");
       isTimeStopping = true;
       startStopping();
     }
