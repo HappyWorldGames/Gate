@@ -1,3 +1,5 @@
+// VERSION 3.3
+
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = HIGH;    // LOW or HIGH
 const bool magnetRelayLOW = LOW;   // LOW or HIGH
@@ -112,7 +114,7 @@ void checkMovementTime()  {
     moveTime += millis() - tempMoveTime;
     Serial.println("moveTime = " + moveTime);
     // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
-    if ((fullOpenTime != -1 && fullCloseTime != -1) && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > currentState == OPENING ? fullOpenTime : fullCloseTime) {
+    if (fullOpenTime > 0 && fullCloseTime > 0 && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > currentState == OPENING ? fullOpenTime : fullCloseTime) {
       Serial.println("Check Movement stopping");
       isTimeStopping = true;
       startStopping();
@@ -242,6 +244,7 @@ void checkInactivity() {
 }
 
 void startOpening() {
+  Serial.println("Try startOpening");
   if(currentState != OPENING && digitalRead(openLimitSwitch) == LOW) {
     Serial.println("Start Opening");
     digitalWrite(motorEN1, HIGH);
@@ -253,6 +256,7 @@ void startOpening() {
 }
 
 void startClosing() {
+  Serial.println("Try startClosing");
   if(currentState != CLOSING && digitalRead(closeLimitSwitch) == LOW) {
     Serial.println("Start Closing");
     digitalWrite(motorEN1, HIGH);
@@ -266,6 +270,7 @@ void startClosing() {
 }
 
 void startStopping() {
+  Serial.println("Try startStopping");
   if(currentState != STOP) {
     Serial.println("Start Stoping");
     isStopping = true;
@@ -283,27 +288,33 @@ void emergencyStop() {
 }
 
 void currectTimeStopping() {
+  Serial.println("currectTimeStopping");
   if (previewState == OPENING && digitalRead(openLimitSwitch) == HIGH) {
     fullOpenTime = moveTime;
     save();
     moveTime = 0;
     isTimeStopping = false;
+    Serial.println("new fullOpenTime = " + fullOpenTime);
   }else if (previewState == CLOSING && digitalRead(closeLimitSwitch) == HIGH) {
     fullCloseTime = moveTime;
     save();
     moveTime = 0;
     isTimeStopping = false;
+    Serial.println("new fullCloseTime = " + fullCloseTime);
   }else {
+    Serial.println("not contact with limit switch");
     if (previewState == OPENING) startOpening();
     else if (previewState == CLOSING) startClosing();
   }
 }
 
 void load() {
+  Serial.println("load");
   // TODO load time
 }
 
 void save() {
+  Serial.println("save");
   // TODO save time
 }
 
