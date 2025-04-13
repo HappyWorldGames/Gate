@@ -1,6 +1,6 @@
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = HIGH;    // LOW or HIGH
-const bool magnetRelayLOW = HIGH;   // LOW or HIGH
+const bool magnetRelayLOW = LOW;   // LOW or HIGH
 
 // Пины
 const int buttonPin = 4;          // Кнопка на пине 4
@@ -9,16 +9,16 @@ const int closeLimitSwitch = 3;   // Концевик закрытия на пи
 
 const int motorEN1 = 7;           // Пин питания направления
 const int motorEN2 = 8;           // Пин питания направления
-const int motorPWD1 = 5;          // ШИМ мотор на пине 5
-const int motorPWD2 = 6;          // ШИМ мотор на пине 6
+const int motorPWD1 = 6;          // ШИМ мотор на пине 5
+const int motorPWD2 = 5;          // ШИМ мотор на пине 6
 
-const int powerPin = 9;           // Реле питания двигателя
-const int magnetPin = 10;         // Реле магнита на пине 10
+const int powerPin = 10;           // Реле питания двигателя
+const int magnetPin = 9;         // Реле магнита на пине 10
 
 // Настройки параметры
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
-  MAGNET_DELAY = 1000,          // 1 секунда задержки после магнита
+  MAGNET_DELAY = 2000,          // 2 секунда задержки после магнита
   INACTIVITY_TIMEOUT = 300000,  // 5 минут неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
 const int maxSpeed = 255;
@@ -37,6 +37,14 @@ bool magnetState = false;
 unsigned long powerStartTime = 0;
 unsigned long magnetDelayStart = 0;
 unsigned long lastActivityTime = 0;
+
+// Для остановки по времени
+bool isTimeStopping = false;
+unsigned long fullOpenTime = -1;   // Время нужное для открытия ворот
+unsigned long fullCloseTime = -1;  //  Время нужное для закрытия ворот
+unsigned long moveTime = 0;       // Время в пути
+unsigned long tempMoveTime = 0;   // Для прибовления времени
+State previewStateTime = previewState;
 
 // Антидребезг кнопки
 int buttonState;
@@ -69,10 +77,13 @@ void setup() {
   digitalWrite(powerPin, powerRelayLOW);
   
   // Проверка начального положения ворот
-  if(digitalRead(closeLimitSwitch) == LOW) {
+  if(digitalRead(closeLimitSwitch) == HIGH) {
+    Serial.println("magnit true");
     digitalWrite(magnetPin, !magnetRelayLOW);
     magnetState = true;
   }
+
+  load();
 
   Serial.println("Setup end");
 }
@@ -81,9 +92,28 @@ void loop() {
   handleButton();
   checkLimitSwitches();
   checkMagnetDelay();
-  // checkMovementTime();
+  checkMovementTime();
   updateMotorSpeed();
   checkInactivity();
+}
+
+void checkMovementTime()  {
+  if (currentState != STOP) {
+    // Подсчет времени
+    if (currentState != previewStateTime) {
+      int fullTime = currentState == OPENING ? fullOpenTime : fullCloseTime;
+      int rfullTime = currentState == OPENING ? fullCloseTime : fullOpenTime;
+      moveTime = moveTimeRevers(moveTime, fullTime, rfullTime);
+      previewStateTime = currentState;
+    }
+    moveTime += millis() - tempMoveTime;
+    // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
+    if ((fullOpenTime != -1 && fullCloseTime != -1) && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > currentState == OPENING ? fullOpenTime : fullCloseTime) {
+      isTimeStopping = true;
+      startStopping();
+    }
+  }
+  tempMoveTime = millis();
 }
 
 void handleButton() {
@@ -122,9 +152,17 @@ void handleButton() {
               }
             }
           }else{
-            if (digitalRead(openLimitSwitch) == HIGH)
-              startOpening();
-            else startClosing();
+            if (digitalRead(closeLimitSwitch) == LOW)
+              startClosing();
+            else{
+              if(magnetState) {
+                digitalWrite(magnetPin, magnetRelayLOW);
+                magnetState = false;
+                magnetDelayStart = millis();
+              } else {
+                startOpening();
+              };
+            }
           }
         } else {
           startStopping();
@@ -144,14 +182,14 @@ void checkMagnetDelay() {
 
 void checkLimitSwitches() {
   // Обработка концевика открытия
-  if(digitalRead(openLimitSwitch) == LOW && currentState == OPENING) {
+  if(digitalRead(openLimitSwitch) == HIGH && currentState == OPENING) {
     Serial.println("OpenLimitSwitch");
     lastActivityTime = millis();
     startStopping();
   }
   
   // Обработка концевика закрытия
-  if(digitalRead(closeLimitSwitch) == LOW && currentState == CLOSING) {
+  if(digitalRead(closeLimitSwitch) == HIGH && currentState == CLOSING) {
     Serial.println("CloseLimitSwitch");
     lastActivityTime = millis();
     digitalWrite(magnetPin, !magnetRelayLOW);
@@ -174,6 +212,7 @@ void updateMotorSpeed() {
         digitalWrite(motorEN2, LOW);
         currentState = STOP;
         isStopping = false;
+        if (isTimeStopping) currectTimeStopping();
       }
     }
     else if(currentState != STOP) {
@@ -198,7 +237,7 @@ void checkInactivity() {
 }
 
 void startOpening() {
-  if(currentState != OPENING && digitalRead(openLimitSwitch) == HIGH) {
+  if(currentState != OPENING && digitalRead(openLimitSwitch) == LOW) {
     Serial.println("Start Opening");
     digitalWrite(motorEN1, HIGH);
     digitalWrite(motorEN2, HIGH);
@@ -209,7 +248,7 @@ void startOpening() {
 }
 
 void startClosing() {
-  if(currentState != CLOSING && digitalRead(closeLimitSwitch) == HIGH) {
+  if(currentState != CLOSING && digitalRead(closeLimitSwitch) == LOW) {
     Serial.println("Start Closing");
     digitalWrite(motorEN1, HIGH);
     digitalWrite(motorEN2, HIGH);
@@ -236,6 +275,31 @@ void emergencyStop() {
   digitalWrite(motorEN2, LOW);
   previewState = currentState;
   currentState = STOP;
+}
+
+void currectTimeStopping() {
+  if (previewState == OPENING && digitalRead(openLimitSwitch) == HIGH) {
+    fullOpenTime = moveTime;
+    save();
+    moveTime = 0;
+    isTimeStopping = false;
+  }else if (previewState == CLOSING && digitalRead(closeLimitSwitch) == HIGH) {
+    fullCloseTime = moveTime;
+    save();
+    moveTime = 0;
+    isTimeStopping = false;
+  }else {
+    if (previewState == OPENING) startOpening();
+    else if (previewState == CLOSING) startClosing();
+  }
+}
+
+void load() {
+  // TODO load time
+}
+
+void save() {
+  // TODO save time
 }
 
 unsigned long moveTimeRevers(unsigned long time, unsigned long fullNowTime, unsigned long fullReversTime) {
