@@ -1,173 +1,253 @@
-/*
-  Алгоритм:
-  Нажатие кнопки
-  1. Включение питания, без подачи на мотор.
-  2. После 2 секунд, если питание не было включено до этого, подача питания на мотор.
-  3. После достижения концевика или нажатия кнопки, остановка подачи питания на мотор.
-  4. По истечению 5 минут выключение питания.
-*/
-const int version = 1;
+const bool powerRelayLOW = HIGH;    // LOW or HIGH
+const bool magnetRelayLOW = HIGH;   // LOW or HIGH
 
-// Порты
-const int reversRelay = 2;              // Порт для управления направлением
-const int motorPowerReley = 3;          // Порт для запуска двигателя pwd
-const int startPowerRelay = 7;          // Порт для запуска питания
-const int magnetPowerRelay = 8;         // Порт для питания магнита
+// Пины
+const int buttonPin = 4;          // Кнопка на пине 4
+const int openLimitSwitch = 2;    // Концевик открытия на пине 2
+const int closeLimitSwitch = 3;   // Концевик закрытия на пине 3
 
-const int switchButton = 4;             // Порт для кнопки
+const int motorEN1 = 7;           // Пин питания направления
+const int motorEN2 = 8;           // Пин питания направления
+const int motorPWD1 = 5;          // ШИМ мотор на пине 5
+const int motorPWD2 = 6;          // ШИМ мотор на пине 6
 
-const int limitSwitchOpen = 5;          // Порт концевика на открытие
-const int limitSwitchClose = 6;         // Порт концевика на закрытие
+const int relayPin = 9;           // Реле питания двигателя
+const int magnetPin = 10;         // Реле магнита на пине 10
 
-// Настройки
-const int delayButton = 300;            // Зажержка между нажатиями кнопки в ms
-const int delayPowerOn = 1000;          // Задержка перез одобрением включения питания в ms
-const int delayPowerOff = 300000;       // Задержка до выключения питания в ms
-const int delayGateTimer = 1000;        // Задержка если не сработает концевик, чтобы остановить ворота(для случаев если что-то случилось с концевиками)
+// Состояния управления
+int currentDirection = 0;        // 0-стоп, 1-открытие, 2-закрытие
+int previewDirection  = 0;
+bool isStopping = false;
+int currentSpeed = 0;
+const int maxSpeed = 255;
+const int accelerationStep = 5;
+const unsigned long accelerationInterval = 50;
 
-const float startSpeed = 0.1275f;        // Скорость старта двигателя
-const unsigned long timeToStart = 2000; // Время для разгона
+// Таймеры и флаги
+bool relayState = false;
+bool magnetState = false;
+unsigned long relayStartTime = 0;
+unsigned long magnetDelayStart = 0;
+unsigned long lastActivityTime = 0;
+const unsigned long 
+  MOTOR_DELAY = 2000,          // 2 секунды задержки двигателя
+  MAGNET_DELAY = 1000,         // 1 секунда задержки после магнита
+  INACTIVITY_TIMEOUT = 300000; // 5 минут неактивности
 
-// Остальные
-unsigned long switchTime = 0;           // Таймер для кнопки, чтобы небыло быстрых переключений
-unsigned long powerOnTime = 0;          // Таймер для питания
-unsigned long startEngineTime = -1;     // Таймер для запуска двигателя
-unsigned long moveGateTimer = 0;        // Таймер отсчета времени при открытии и закрытие
-unsigned long tempMoveGateTimer = 0;    // Таймер отсчета времени при включеном отсчете открытия/закрытия ворот
+// Для остановки по времени
+unsigned long fullOpenTime = 0;   // Время нужное для открытия ворот
+unsigned long fullCloseTime = 0;  //  Время нужное для закрытия ворот
+unsigned long moveTime = 0;       // Время в пути
+unsigned long tempMoveTime = 0;   // Для прибовления времени
+int previewDirectionForTimer = 0;
 
-int timeToOpen = -1;                    // Время которое нужно для открытия ворот
-int timeToClose = -1;                   // Время которое нужно для закрытия ворот
+// Антидребезг
+int buttonState;
+int lastButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50;
 
-bool limitSwitchIsOpen = false;         // Состояние концевика на открыте
-bool limitSwitchIsClose = false;        // Состояние концевика на закрытие
-int doorStatus = 1;                     // Отпределяет куда ехать или стоять
-bool isPower = false;                   // Включено ли питание
-bool isSmoothStartEngine = false;       // Регулятор для включения плавнойго включения двигателя
-bool isMoveGateTimer = false;           // Включать ли отсчет времени открытия или закрытия ворот
-
-// true и false для обратных реле
-bool t = 0;
-bool f = 1;
+unsigned long lastAccelTime = 0;
 
 void setup() {
-  Serial.begin(19200);
-  Serial.println("version: " + version);
+  Serial.begin(9600);
+  Serial.println("Setup start");
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(openLimitSwitch, INPUT_PULLUP);
+  pinMode(closeLimitSwitch, INPUT_PULLUP);
   
-  pinMode(reversRelay, OUTPUT);
-  pinMode(motorPowerReley, OUTPUT);
-  pinMode(startPowerRelay, OUTPUT);
-  pinMode(magnetPowerRelay, OUTPUT);
-
-  pinMode(switchButton, INPUT_PULLUP);
-  pinMode(limitSwitchOpen, INPUT_PULLUP);
-  pinMode(limitSwitchClose, INPUT_PULLUP);
-
-  digitalWrite(startPowerRelay, f);         // Выключаем питание
-  /*analog*/digitalWrite(motorPowerReley, 1);          // Выклюючаем двигатель
-  digitalWrite(reversRelay, f);             // Выключаем направление
-  digitalWrite(magnetPowerRelay, t);        // Вклычаем питание на магните
+  pinMode(motorEN1, OUTPUT);
+  pinMode(motorEN2, OUTPUT);
+  pinMode(motorPWD1, OUTPUT);
+  pinMode(motorPWD2, OUTPUT);
+  pinMode(relayPin, OUTPUT);
+  pinMode(magnetPin, OUTPUT);
+  
+  // Инициализация состояний
+  digitalWrite(motorEN1, LOW);
+  digitalWrite(motorEN2, LOW);
+  analogWrite(motorPWD1, 0);
+  analogWrite(motorPWD2, 0);
+  digitalWrite(relayPin, powerRelayLOW);
+  
+  // Проверка начального положения ворот
+  if(digitalRead(closeLimitSwitch) == LOW) {
+    digitalWrite(magnetPin, !magnetRelayLOW);
+    magnetState = true;
+  }
+  Serial.println("Setup end");
 }
 
 void loop() {
-  bool statusButton = !digitalRead(switchButton);
-  limitSwitchIsOpen = digitalRead(limitSwitchOpen);
-  limitSwitchIsClose = digitalRead(limitSwitchClose);
+  handleButton();
+  checkLimitSwitches();
+  checkMagnetDelay();
+  // checkMovementTime();
+  updateMotorSpeed();
+  checkInactivity();
+}
 
-  if (limitSwitchIsOpen && doorStatus != 2) doorStatus = 1;
-  else if (limitSwitchIsClose && doorStatus != 0) doorStatus = 3;
-  // switch button
-  if (statusButton && millis() - switchTime > delayButton) {
-    Serial.println("click");
-    switchTime = millis();
-
-    if (!isPower) {
-      digitalWrite(startPowerRelay, t);
-      delay(delayPowerOn);              // Плохое решение, но должно работать.
-      isPower = true;
-      powerOnTime = millis();
+void checkMovementTime()  {
+  if (currentDirection != 0) {
+    if (currentDirection != previewDirectionForTimer) {
+      int fullTime = currentDirection == 1 ? fullOpenTime : fullCloseTime;
+      int rfullTime = currentDirection == 1 ? fullCloseTime : fullOpenTime;
+      moveTime = moveTimeRevers(moveTime, fullTime, rfullTime);
+      previewDirectionForTimer = currentDirection;
     }
-
-    // switch status door
-    doorStatus++;
-    if (doorStatus > 3) doorStatus = 0;
+    moveTime += millis() - tempMoveTime;
   }
+  tempMoveTime = millis();
+}
 
-  if (!isPower) {                 // Если питания нет не включать реле управления
-    digitalWrite(reversRelay, f);
-    digitalWrite(motorPowerReley, 1);
-    digitalWrite(magnetPowerRelay, 1);  // Поддерживаем включеным магнит
-    startEngineTime = -1;
-    tempMoveGateTimer = millis();
-    return;
-  }else if (millis() - powerOnTime > delayPowerOff) {  // Если прошло время выключения
-    isPower = false;
-    digitalWrite(startPowerRelay, f);
-    digitalWrite(reversRelay, f);
-    digitalWrite(motorPowerReley, 1);
+void checkInactivity() {
+  if(relayState && (millis() - lastActivityTime > INACTIVITY_TIMEOUT)) {
+    Serial.println("Inactivity");
+    digitalWrite(relayPin, powerRelayLOW);
+    relayState = false;
+    currentDirection = 0;
+    digitalWrite(motorEN1, LOW);
+    digitalWrite(motorEN2, LOW);
   }
+}
 
-  // Проверка по времени закрытия
-  if (isMoveGateTimer) {
-    moveGateTimer += millis() - tempMoveGateTimer;
-    if (limitSwitchIsOpen && !limitSwitchIsClose) {
+void handleButton() {
+  int reading = digitalRead(buttonPin);
+  
+  if(reading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
+  
+  if((millis() - lastDebounceTime) > debounceDelay) {
+    if(reading != buttonState) {
+      buttonState = reading;
       
+      if(buttonState == LOW) {
+        Serial.println("Click");
+        lastActivityTime = millis();
+        
+        if(currentDirection == 0) {
+          if(!relayState) {
+            digitalWrite(relayPin, !powerRelayLOW);
+            relayState = true;
+            relayStartTime = millis();
+          }
+          
+          if(millis() - relayStartTime >= MOTOR_DELAY) {
+            if (previewDirection == 1 && digitalRead(openLimitSwitch) == LOW) {
+              startClosing();
+            }
+            else if(previewDirection == 2 && digitalRead(closeLimitSwitch) == LOW) {
+              if(magnetState) {
+                digitalWrite(magnetPin, magnetRelayLOW);
+                magnetState = false;
+                magnetDelayStart = millis();
+              } else {
+                startOpening();
+              }
+            }
+          }
+        } else {
+          startStopping();
+        }
+      }
     }
   }
-  tempMoveGateTimer = millis();
+  lastButtonState = reading;
+}
 
-  // Плавный старт
-  if (isSmoothStartEngine) smoothStartEngine();
-
-  switch (doorStatus) {
-    case 0:
-      // open
-      if (limitSwitchIsOpen && !limitSwitchIsClose) doorStatus = 2;
-      digitalWrite(reversRelay, f);
-      digitalWrite(magnetPowerRelay, 0);
-      delay(1000);
-      isSmoothStartEngine = true;
-        
-      Serial.println("door=0");
-      break;
-    case 1:
-      // idle
-      idleEngine();
-        
-      Serial.println("door=1");
-      break;
-    case 2:
-      // close
-      if (limitSwitchIsClose && !limitSwitchIsOpen) doorStatus = 0;
-      digitalWrite(reversRelay, t);
-      digitalWrite(magnetPowerRelay, 1);
-      isSmoothStartEngine = true;
-        
-      Serial.println("door=2");
-      break;
-    case 3:
-      // idle
-      idleEngine();
-        
-      Serial.println("door=3");
-      break;
+void checkMagnetDelay() {
+  if(magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
+    magnetDelayStart = 0;
+    startOpening();
   }
 }
 
-void smoothStartEngine() {
-  Serial.println("smooth");
-  if (startEngineTime == -1) startEngineTime = millis();
-  unsigned long timeLeft = millis() - startEngineTime;
-
-  int x = 0; //255;
-  /*if (timeLeft <= timeToStart) x = 0 + startSpeed * timeLeft;
-  else*/ isSmoothStartEngine = false;
-
-  /*analog*/digitalWrite(motorPowerReley, x);
+void checkLimitSwitches() {
+  // Обработка концевика открытия
+  if(digitalRead(openLimitSwitch) == LOW && currentDirection == 1) {
+    Serial.println("OpenLimitSwitch");
+    lastActivityTime = millis();
+    startStopping();
+  }
+  
+  // Обработка концевика закрытия
+  if(digitalRead(closeLimitSwitch) == LOW && currentDirection == 2) {
+    Serial.println("CloseLimitSwitch");
+    lastActivityTime = millis();
+    digitalWrite(magnetPin, !magnetRelayLOW);
+    magnetState = true;
+    startStopping();
+  }
 }
 
-void idleEngine() {
-  Serial.println("idle");
-  /*analog*/digitalWrite(motorPowerReley, 1);
-  digitalWrite(reversRelay, f);
-  startEngineTime = -1;
+void updateMotorSpeed() {
+  if(millis() - lastAccelTime >= accelerationInterval) {
+    lastAccelTime = millis();
+    
+    if(isStopping) {
+      currentSpeed = max(currentSpeed - accelerationStep, 0);
+      analogWrite(motorPWD1, currentSpeed);
+      analogWrite(motorPWD2, currentSpeed);
+      
+      if(currentSpeed == 0) {
+        digitalWrite(motorEN1, LOW);
+        digitalWrite(motorEN2, LOW);
+        currentDirection = 0;
+        isStopping = false;
+      }
+    } 
+    else if(currentDirection != 0) {
+      if(millis() - relayStartTime >= MOTOR_DELAY && magnetDelayStart == 0) {
+        currentSpeed = min(currentSpeed + accelerationStep, maxSpeed);
+        analogWrite(motorPWD1, currentSpeed);
+        analogWrite(motorPWD2, currentSpeed);
+      }
+    }
+  }
+}
+
+void startOpening() {
+  if(currentDirection != 1) {
+    Serial.println("Start Opening");
+    digitalWrite(motorEN1, HIGH);
+    digitalWrite(motorEN2, LOW);
+    currentDirection = 1;
+    isStopping = false;
+    currentSpeed = 0;
+  }
+}
+
+void startClosing() {
+  if(currentDirection != 2) {
+    Serial.println("Start Closing");
+    digitalWrite(motorEN1, LOW);
+    digitalWrite(motorEN2, HIGH);
+    currentDirection = 2;
+    isStopping = false;
+    currentSpeed = 0;
+    digitalWrite(magnetPin, magnetRelayLOW);
+    magnetState = false;
+  }
+}
+
+void startStopping() {
+  if(currentDirection != 0) {
+    Serial.println("Start Stoping");
+    isStopping = true;
+    previewDirection = currentDirection;
+  }
+}
+
+void emergencyStop() {
+  Serial.println("Emergency Stop");
+  digitalWrite(relayPin, LOW);
+  digitalWrite(motorEN1, LOW);
+  digitalWrite(motorEN2, LOW);
+  currentDirection = 0;
+  previewDirection = currentDirection;
+}
+
+unsigned long moveTimeRevers(unsigned long time, unsigned long fullNowTime, unsigned long fullReversTime) {
+  return (fullReversTime * ((time * 100) / fullNowTime)) / 100;
 }
