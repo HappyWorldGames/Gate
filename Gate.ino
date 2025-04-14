@@ -1,4 +1,4 @@
-// VERSION 3.3.1
+// VERSION 3.3.2
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = HIGH;    // LOW or HIGH
@@ -21,7 +21,7 @@ const int magnetPin = 9;         // Реле магнита на пине 10
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
   MAGNET_DELAY = 2000,          // 2 секунда задержки после магнита
-  INACTIVITY_TIMEOUT = 300000,  // 5 минут неактивности
+  INACTIVITY_TIMEOUT = 30000,  // 30 секунд неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
 const int maxSpeed = 255;
 const int accelerationStep = 5; // Шаг разгона
@@ -42,8 +42,8 @@ unsigned long lastActivityTime = 0;
 
 // Для остановки по времени
 bool isTimeStopping = false;
-unsigned long fullOpenTime = -1;   // Время нужное для открытия ворот
-unsigned long fullCloseTime = -1;  //  Время нужное для закрытия ворот
+unsigned long fullOpenTime = 0;   // Время нужное для открытия ворот
+unsigned long fullCloseTime = 0;  //  Время нужное для закрытия ворот
 unsigned long moveTime = 0;       // Время в пути
 unsigned long tempMoveTime = 0;   // Для прибовления времени
 State previewStateTime = previewState;
@@ -307,9 +307,9 @@ void currectTimeStopping() {
     Serial.print("new fullCloseTime = ");
     Serial.println(fullCloseTime);
   }else {
-    Serial.println("not contact with limit switch");
-    if (previewState == OPENING) startOpening();
-    else if (previewState == CLOSING) startClosing();
+    // Serial.println("not contact with limit switch");
+    // if (previewState == OPENING) startOpening();
+    // else if (previewState == CLOSING) startClosing();
   }
 }
 
