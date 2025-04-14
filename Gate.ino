@@ -123,7 +123,7 @@ void checkMovementTime()  {
       Serial.print("moveTime = ");
       Serial.println(moveTime);
       // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
-      if (currentState == OPENING && fullOpenTime > 0 /*&& fullCloseTime > 0*/ && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > fullOpenTime) { // currentState == OPENING ? fullOpenTime : fullCloseTime) {
+      if (currentState == OPENING && fullOpenTime > 0 /*&& fullCloseTime > 0*/ && moveTime + (((maxSpeed / accelerationStep) * accelerationInterval) * 2) > fullOpenTime) { // currentState == OPENING ? fullOpenTime : fullCloseTime) {
         Serial.println("Check Movement stopping");
         isTimeStopping = true;
         startStopping();
@@ -204,6 +204,7 @@ void checkLimitSwitches() {
     lastActivityTime = millis();
     startStopping();
 
+    /*if (isTimeStopping) */currectTimeStopping();
     moveTime = fullOpenTime;
     isStartFromLimitSwitch = true;
   }
@@ -214,10 +215,11 @@ void checkLimitSwitches() {
     lastActivityTime = millis();
     digitalWrite(magnetPin, !magnetRelayLOW);
     magnetState = true;
-    startStopping();
-
+        
     moveTime = 0;
     isStartFromLimitSwitch = true;
+    
+    startStopping();
   }
 }
 
@@ -312,7 +314,8 @@ void currectTimeStopping() {
     isTimeStopping = false;
     Serial.print("new fullOpenTime = ");
     Serial.println(fullOpenTime);
-  // } else if (previewState == CLOSING && digitalRead(closeLimitSwitch) == HIGH) {
+  } else if (/*previewState == CLOSING &&*/ digitalRead(closeLimitSwitch) == HIGH) {
+       moveTime = 0;
   //   fullCloseTime = moveTime;
   //   save();
   //   moveTime = 0;
