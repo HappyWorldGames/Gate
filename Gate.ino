@@ -20,10 +20,11 @@ const int magnetPin = 9;         // Реле магнита на пине 10
 // Настройки параметры
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
-  MAGNET_DELAY = 2000,          // 2 секунда задержки после магнита
+  MAGNET_DELAY = 1000,          // 2 секунда задержки после магнита
   INACTIVITY_TIMEOUT = 30000,  // 30 секунд неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
-const int maxSpeed = 255;
+int maxSpeed = 255;
+int minSpeed = 0;
 const int accelerationStep = 5; // Шаг разгона
 
 // Состояние управления
@@ -43,7 +44,8 @@ unsigned long lastActivityTime = 0;
 // Для остановки по времени
 bool isTimeStopping = false;
 bool isStartFromLimitSwitch = false;
-long fullOpenTime = 0;   // Время нужное для открытия ворот
+bool isNotLimitSwitch = false;
+long fullOpenTime = 8000;   // Время нужное для открытия ворот
 // unsigned long fullCloseTime = 0;  //  Время нужное для закрытия ворот
 long moveTime = 0;       // Время в пути
 long tempMoveTime = 0;   // Для прибовления времени
@@ -100,7 +102,7 @@ void loop() {
   handleButton();
   checkLimitSwitches();
   checkMagnetDelay();
-  checkMovementTime();
+  //checkMovementTime();
   updateMotorSpeed();
   checkInactivity();
   Serial.flush();
@@ -120,13 +122,15 @@ void checkMovementTime()  {
       // }
       if (currentState == OPENING) moveTime += millis() - tempMoveTime;
       else if (currentState == CLOSING) moveTime -= millis() - tempMoveTime;
+      if (moveTime < 0) moveTime = 0;
       Serial.print("moveTime = ");
       Serial.println(moveTime);
       // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
-      if (currentState == OPENING && fullOpenTime > 0 /*&& fullCloseTime > 0*/ && moveTime + (((maxSpeed / accelerationStep) * accelerationInterval) * 2) > fullOpenTime) { // currentState == OPENING ? fullOpenTime : fullCloseTime) {
+      if (!isNotLimitSwitch && currentState == OPENING && fullOpenTime > 0 /*&& fullCloseTime > 0*/ && moveTime + (((maxSpeed / accelerationStep) * accelerationInterval) * 0/*2.8*/) > fullOpenTime) { // currentState == OPENING ? fullOpenTime : fullCloseTime) {
         Serial.println("Check Movement stopping");
         isTimeStopping = true;
         startStopping();
+        minSpeed = 102;
       }
     }
     tempMoveTime = millis();
@@ -228,21 +232,25 @@ void updateMotorSpeed() {
     lastAccelTime = millis();
     
     if(isStopping) {
-      currentSpeed = max(currentSpeed - accelerationStep, 0);
+      currentSpeed = max(currentSpeed - accelerationStep, minSpeed);
       analogWrite(motorPWD1, currentState == OPENING ? currentSpeed : 0);
       analogWrite(motorPWD2, currentState == CLOSING ? currentSpeed : 0);
       
       if(currentSpeed == 0) {
         digitalWrite(motorEN1, LOW);
         digitalWrite(motorEN2, LOW);
+        previewState = currentState;
         currentState = STOP;
         isStopping = false;
+        minSpeed = 0;
+        maxSpeed = 255;
         if (isTimeStopping) currectTimeStopping();
       }
     }
     else if(currentState != STOP) {
       if(millis() - powerStartTime >= MOTOR_DELAY && magnetDelayStart == 0) {
         currentSpeed = min(currentSpeed + accelerationStep, maxSpeed);
+        if(currentSpeed < minSpeed) currentSpeed =  minSpeed;
         analogWrite(motorPWD1, currentState == OPENING ? currentSpeed : 0);
         analogWrite(motorPWD2, currentState == CLOSING ? currentSpeed : 0);
       }
@@ -269,6 +277,7 @@ void startOpening() {
     digitalWrite(motorEN2, HIGH);
     currentState = OPENING;
     isStopping = false;
+    minSpeed = 250;
     currentSpeed = 0;
   }
 }
@@ -290,9 +299,9 @@ void startClosing() {
 void startStopping() {
   Serial.println("Try startStopping");
   if(currentState != STOP) {
+    minSpeed = 0;
     Serial.println("Start Stoping");
     isStopping = true;
-    previewState = currentState;
   }
 }
 
@@ -309,9 +318,10 @@ void currectTimeStopping() {
   Serial.println("currectTimeStopping");
   if (!isStartFromLimitSwitch) return;
   if (/*previewState == OPENING &&*/ digitalRead(openLimitSwitch) == HIGH) {
-    fullOpenTime = moveTime;
+    //fullOpenTime = moveTime;
     save();
     isTimeStopping = false;
+    isNotLimitSwitch = false;
     Serial.print("new fullOpenTime = ");
     Serial.println(fullOpenTime);
   } else if (/*previewState == CLOSING &&*/ digitalRead(closeLimitSwitch) == HIGH) {
@@ -324,7 +334,11 @@ void currectTimeStopping() {
   //   Serial.println(fullCloseTime);
   } else {
     Serial.println("not contact with limit switch");
-    if (previewState == OPENING) startOpening();
+    if (previewState == OPENING) {
+            isNotLimitSwitch = true;
+            maxSpeed = 127;
+            startOpening();
+    }
     // else if (previewState == CLOSING) startClosing();
   }
 }
