@@ -94,34 +94,36 @@ void loop() {
   handleButton();
   checkLimitSwitches();
   checkMagnetDelay();
-  // moved to updateMotorSpeed checkMovementTime();
+  checkMovementTime();
   updateMotorSpeed();
   checkInactivity();
   Serial.flush();
 }
 
 void checkMovementTime()  {
-  // Добавить задержку
-  if (currentState != STOP) {
-    Serial.println("Check Movement");
-    // Подсчет времени
-    if (currentState != previewStateTime) {
-      Serial.println("Revers moveTime");
-      int fullTime = currentState == OPENING ? fullOpenTime : fullCloseTime;
-      int rfullTime = currentState == OPENING ? fullCloseTime : fullOpenTime;
-      moveTime = moveTimeRevers(moveTime, fullTime, rfullTime);
-      previewStateTime = currentState;
+  if(millis() - tempMoveTime >= 250) {
+    if (currentState != STOP) {
+      Serial.println("Check Movement");
+      // Подсчет времени
+      if (currentState != previewStateTime) {
+        Serial.println("Revers moveTime");
+        int fullTime = currentState == OPENING ? fullOpenTime : fullCloseTime;
+        int rfullTime = currentState == OPENING ? fullCloseTime : fullOpenTime;
+        moveTime = moveTimeRevers(moveTime, fullTime, rfullTime);
+        previewStateTime = currentState;
+      }
+      moveTime += millis() - tempMoveTime;
+      Serial.print("moveTime = ");
+      Serial.println(moveTime);
+      // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
+      if (fullOpenTime > 0 && fullCloseTime > 0 && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > currentState == OPENING ? fullOpenTime : fullCloseTime) {
+        Serial.println("Check Movement stopping");
+        isTimeStopping = true;
+        startStopping();
+      }
     }
-    moveTime += millis() - tempMoveTime;
-    Serial.println("moveTime = " + moveTime);
-    // Определение когда будем тормозить, если скорость + время на торможение превышают время до концевика, останавливаемся
-    if (fullOpenTime > 0 && fullCloseTime > 0 && moveTime + ((maxSpeed / accelerationStep) * accelerationInterval) > currentState == OPENING ? fullOpenTime : fullCloseTime) {
-      Serial.println("Check Movement stopping");
-      isTimeStopping = true;
-      startStopping();
-    }
+    tempMoveTime = millis();
   }
-  tempMoveTime = millis();
 }
 
 void handleButton() {
@@ -209,8 +211,6 @@ void checkLimitSwitches() {
 void updateMotorSpeed() {
   if(millis() - lastAccelTime >= accelerationInterval) {
     lastAccelTime = millis();
-
-    checkMovementTime();
     
     if(isStopping) {
       currentSpeed = max(currentSpeed - accelerationStep, 0);
@@ -297,13 +297,15 @@ void currectTimeStopping() {
     save();
     moveTime = 0;
     isTimeStopping = false;
-    Serial.println("new fullOpenTime = " + fullOpenTime);
+    Serial.print("new fullOpenTime = ");
+    Serial.println(fullOpenTime);
   }else if (previewState == CLOSING && digitalRead(closeLimitSwitch) == HIGH) {
     fullCloseTime = moveTime;
     save();
     moveTime = 0;
     isTimeStopping = false;
-    Serial.println("new fullCloseTime = " + fullCloseTime);
+    Serial.print("new fullCloseTime = ");
+    Serial.println(fullCloseTime);
   }else {
     Serial.println("not contact with limit switch");
     if (previewState == OPENING) startOpening();
