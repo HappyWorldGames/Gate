@@ -2,26 +2,27 @@
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = HIGH;    // LOW or HIGH
-const bool magnetRelayLOW = LOW;   // LOW or HIGH
+const bool magnetRelayLOW = LOW;    // LOW or HIGH
 
 // Пины
 const int buttonPin = 4;          // Кнопка на пине 4
 const int openLimitSwitch = 2;    // Концевик открытия на пине 2
 const int closeLimitSwitch = 3;   // Концевик закрытия на пине 3
+const int magnetLimitSwitch = 1;  // Магнитный концевик для начала остановки
 
 const int motorEN1 = 7;           // Пин питания направления
 const int motorEN2 = 8;           // Пин питания направления
 const int motorPWD1 = 6;          // ШИМ мотор на пине 5
 const int motorPWD2 = 5;          // ШИМ мотор на пине 6
 
-const int powerPin = 10;           // Реле питания двигателя
-const int magnetPin = 9;         // Реле магнита на пине 10
+const int powerPin = 10;          // Реле питания двигателя
+const int magnetPin = 9;          // Реле магнита на пине 10
 
 // Настройки параметры
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
   MAGNET_DELAY = 1000,          // 2 секунда задержки после магнита
-  INACTIVITY_TIMEOUT = 30000,  // 30 секунд неактивности
+  INACTIVITY_TIMEOUT = 30000,   // 30 секунд неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
 int maxSpeed = 255;
 int minSpeed = 0;
@@ -66,6 +67,7 @@ void setup() {
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(openLimitSwitch, INPUT_PULLUP);
   pinMode(closeLimitSwitch, INPUT_PULLUP);
+  pinMode(magnetLimitSwitch, INPUT_PULLUP);
   
   pinMode(motorEN1, OUTPUT);
   pinMode(motorEN2, OUTPUT);
@@ -202,13 +204,17 @@ void checkMagnetDelay() {
 }
 
 void checkLimitSwitches() {
+  if (digitalRead(magnetLimitSwitch) == HIGH && currentState == OPENING) {
+    minSpeed = 100;
+    startStopping();
+  }
   // Обработка концевика открытия
   if(digitalRead(openLimitSwitch) == HIGH && currentState == OPENING) {
     Serial.println("OpenLimitSwitch");
     lastActivityTime = millis();
     startStopping();
 
-    /*if (isTimeStopping) */currectTimeStopping();
+    //if (isTimeStopping) currectTimeStopping();
     moveTime = fullOpenTime;
     isStartFromLimitSwitch = true;
   }
@@ -244,7 +250,7 @@ void updateMotorSpeed() {
         isStopping = false;
         minSpeed = 0;
         maxSpeed = 255;
-        if (isTimeStopping) currectTimeStopping();
+        // if (isTimeStopping) currectTimeStopping();
       }
     }
     else if(currentState != STOP) {
