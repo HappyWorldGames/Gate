@@ -8,7 +8,7 @@ const bool magnetRelayLOW = LOW;    // LOW or HIGH
 const int buttonPin = 4;          // Кнопка на пине 4
 const int openLimitSwitch = 2;    // Концевик открытия на пине 2
 const int closeLimitSwitch = 3;   // Концевик закрытия на пине 3
-const int magnetLimitSwitch = 1;  // Магнитный концевик для начала остановки
+const int magnetLimitSwitch = 11;  // Магнитный концевик для начала остановки
 
 const int motorEN1 = 7;           // Пин питания направления
 const int motorEN2 = 8;           // Пин питания направления
@@ -17,6 +17,7 @@ const int motorPWD2 = 5;          // ШИМ мотор на пине 6
 
 const int powerPin = 10;          // Реле питания двигателя
 const int magnetPin = 9;          // Реле магнита на пине 10
+const int ledPin = 13;
 
 // Настройки параметры
 const unsigned long 
@@ -38,9 +39,13 @@ int currentSpeed = 0;
 // Таймеры и флаги
 bool powerState = false;
 bool magnetState = false;
+bool startPowerMake = false;
 unsigned long powerStartTime = 0;
 unsigned long magnetDelayStart = 0;
 unsigned long lastActivityTime = 0;
+
+unsigned long notSleepTime = 0;
+bool ledState = false;
 
 // Для остановки по времени
 bool isTimeStopping = false;
@@ -76,6 +81,8 @@ void setup() {
   pinMode(powerPin, OUTPUT);
   pinMode(magnetPin, OUTPUT);
   
+  pinMode(ledPin, OUTPUT);
+  
   // Инициализация состояний
   digitalWrite(motorEN1, LOW);
   digitalWrite(motorEN2, LOW);
@@ -107,7 +114,14 @@ void loop() {
   //checkMovementTime();
   updateMotorSpeed();
   checkInactivity();
-  Serial.flush();
+  
+  if(millis() - notSleepTime > 1000) {
+    Serial.println("Not Sleep!");
+    digitalWrite(ledPin, ledState);
+    ledState = !ledState;
+    Serial.flush();
+    notSleepTime = millis();
+  }
 }
 
 void checkMovementTime()  {
@@ -188,6 +202,7 @@ void handleButton() {
             }
           }
         } else {
+          minSpeed = 0;
           startStopping();
         }
       }
@@ -204,7 +219,7 @@ void checkMagnetDelay() {
 }
 
 void checkLimitSwitches() {
-  if (digitalRead(magnetLimitSwitch) == HIGH && currentState == OPENING) {
+  if (digitalRead(magnetLimitSwitch) == LOW && currentState == OPENING) {
     minSpeed = 100;
     startStopping();
   }
@@ -212,11 +227,12 @@ void checkLimitSwitches() {
   if(digitalRead(openLimitSwitch) == HIGH && currentState == OPENING) {
     Serial.println("OpenLimitSwitch");
     lastActivityTime = millis();
+    minSpeed = 0;
     startStopping();
 
     //if (isTimeStopping) currectTimeStopping();
-    moveTime = fullOpenTime;
-    isStartFromLimitSwitch = true;
+    //moveTime = fullOpenTime;
+    //isStartFromLimitSwitch = true;
   }
   
   // Обработка концевика закрытия
@@ -284,6 +300,7 @@ void startOpening() {
     currentState = OPENING;
     isStopping = false;
     minSpeed = 250;
+    maxSpeed = 255;
     currentSpeed = 0;
   }
 }
@@ -296,6 +313,8 @@ void startClosing() {
     digitalWrite(motorEN2, HIGH);
     currentState = CLOSING;
     isStopping = false;
+    minSpeed = 0;
+    maxSpeed = 255;
     currentSpeed = 0;
     digitalWrite(magnetPin, magnetRelayLOW);
     magnetState = false;
@@ -305,7 +324,7 @@ void startClosing() {
 void startStopping() {
   Serial.println("Try startStopping");
   if(currentState != STOP) {
-    minSpeed = 0;
+    //minSpeed = 0;
     Serial.println("Start Stoping");
     isStopping = true;
   }
