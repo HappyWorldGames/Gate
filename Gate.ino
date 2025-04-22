@@ -109,6 +109,7 @@ void setup() {
 
 void loop() {
   handleButton();
+  checkAfterClick();
   checkLimitSwitches();
   checkMagnetDelay();
   //checkMovementTime();
@@ -188,18 +189,20 @@ void handleButton() {
                 startOpening();
               }
             }
+            startPowerMake = false;
           }else{
-            if (digitalRead(closeLimitSwitch) == LOW)
-              startClosing();
-            else{
-              if(magnetState) {
-                digitalWrite(magnetPin, magnetRelayLOW);
-                magnetState = false;
-                magnetDelayStart = millis();
-              } else {
-                startOpening();
-              };
-            }
+            startPowerMake = true;
+            // if (digitalRead(closeLimitSwitch) == LOW)
+            //   startClosing();
+            // else{
+            //   if(magnetState) {
+            //     digitalWrite(magnetPin, magnetRelayLOW);
+            //     magnetState = false;
+            //     magnetDelayStart = millis();
+            //   } else {
+            //     startOpening();
+            //   };
+            // }
           }
         } else {
           minSpeed = 0;
@@ -209,6 +212,25 @@ void handleButton() {
     }
   }
   lastButtonState = reading;
+}
+
+void checkAfterClick() {
+  if (!startPowerMake) return;
+  if(millis() - powerStartTime >= MOTOR_DELAY) {
+    if (previewState == OPENING) {
+      startClosing();
+    }
+    else if(previewState == CLOSING) {
+      if(magnetState) {
+        digitalWrite(magnetPin, magnetRelayLOW);
+        magnetState = false;
+        magnetDelayStart = millis();
+      } else {
+        startOpening();
+      }
+    }
+    startPowerMake = false;
+  }
 }
 
 void checkMagnetDelay() {
