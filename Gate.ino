@@ -32,7 +32,7 @@ const int accelerationStep = 5; // Шаг разгона
 // Состояние управления
 enum State { STOP, OPENING, CLOSING };
 State currentState = STOP;
-State previewState = CLOSING;
+State previewState = OPENING;
 bool isStopping = false;
 int currentSpeed = 0;
 
@@ -321,7 +321,7 @@ void startOpening() {
     digitalWrite(motorEN2, HIGH);
     currentState = OPENING;
     isStopping = false;
-    minSpeed = 250;
+    minSpeed = 0;  // old 250
     maxSpeed = 255;
     currentSpeed = 0;
   }
