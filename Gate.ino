@@ -3,6 +3,8 @@
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = HIGH;    // LOW or HIGH
 const bool magnetRelayLOW = LOW;    // LOW or HIGH
+const int maxSpeedConst = 204;
+const int minSpeedConst = 0;
 
 // Пины
 const int buttonPin = 4;          // Кнопка на пине 4
@@ -242,7 +244,7 @@ void checkMagnetDelay() {
 
 void checkLimitSwitches() {
   if (digitalRead(magnetLimitSwitch) == LOW && currentState == OPENING) {
-    minSpeed = 100;
+    minSpeed = 76;
     startStopping();
   }
   // Обработка концевика открытия
@@ -267,6 +269,8 @@ void checkLimitSwitches() {
     moveTime = 0;
     isStartFromLimitSwitch = true;
     
+    minSpeed = 0;
+    maxSpeed = 20;
     startStopping();
   }
 }
@@ -275,6 +279,8 @@ void updateMotorSpeed() {
   if(millis() - lastAccelTime >= accelerationInterval) {
     lastAccelTime = millis();
     
+    if(maxSpeed < currentSpeed) currentSpeed = maxSpeed;
+    else if(minSpeed > currentSpeed) currentSpeed = minSpeed;
     if(isStopping) {
       currentSpeed = max(currentSpeed - accelerationStep, minSpeed);
       analogWrite(motorPWD1, currentState == OPENING ? currentSpeed : 0);
@@ -287,7 +293,7 @@ void updateMotorSpeed() {
         currentState = STOP;
         isStopping = false;
         minSpeed = 0;
-        maxSpeed = 255;
+        maxSpeed = maxSpeedConst;
         // if (isTimeStopping) currectTimeStopping();
       }
     }
@@ -322,7 +328,7 @@ void startOpening() {
     currentState = OPENING;
     isStopping = false;
     minSpeed = 0;  // old 250
-    maxSpeed = 255;
+    maxSpeed = maxSpeedConst;
     currentSpeed = 0;
   }
 }
@@ -336,7 +342,7 @@ void startClosing() {
     currentState = CLOSING;
     isStopping = false;
     minSpeed = 0;
-    maxSpeed = 255;
+    maxSpeed = maxSpeedConst;
     currentSpeed = 0;
     digitalWrite(magnetPin, magnetRelayLOW);
     magnetState = false;
