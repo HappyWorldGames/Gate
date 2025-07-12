@@ -1,7 +1,7 @@
-// VERSION 3.3.4
+// VERSION 3.3.5
 
 // Для легкой настройки обратный реле
-const bool powerRelayLOW = HIGH;    // LOW or HIGH
+const bool powerRelayLOW = LOW;    // LOW or HIGH
 const bool magnetRelayLOW = LOW;    // LOW or HIGH
 const int maxSpeedConst = 204;
 const int minSpeedConst = 0;
@@ -25,7 +25,7 @@ const int ledPin = 13;
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
   MAGNET_DELAY = 1000,          // 2 секунда задержки после магнита
-  INACTIVITY_TIMEOUT = 30000,   // 30 секунд неактивности
+  INACTIVITY_TIMEOUT = 17000,   // 30 секунд неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
 int maxSpeed = 255;
 int minSpeed = 0;
@@ -120,6 +120,10 @@ void loop() {
   
   if(millis() - notSleepTime > 1000) {
     Serial.println("Not Sleep!");
+    Serial.print("Open limit: ");
+    Serial.println(digitalRead(openLimitSwitch));
+    Serial.print("Close limit: ");
+    Serial.println(digitalRead(closeLimitSwitch));
     digitalWrite(ledPin, ledState);
     ledState = !ledState;
     Serial.flush();
