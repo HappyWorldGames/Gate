@@ -18,13 +18,13 @@ const int motorPWD1 = 6;          // ШИМ мотор на пине 5
 const int motorPWD2 = 5;          // ШИМ мотор на пине 6
 
 const int powerPin = 10;          // Реле питания двигателя
-const int magnetPin = 9;          // Реле магнита на пине 10
+const int unlockMagnetPin = 9;            // Реле электромакнита который открывает
 const int ledPin = 13;
 
 // Настройки параметры
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
-  MAGNET_DELAY = 1000,          // 1 секунда задержки после магнита
+  MAGNET_DELAY = 500,          // 0.5 секунда задержки после магнита
   INACTIVITY_TIMEOUT = 17000,   // 30 секунд неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
 int maxSpeed = 255;
@@ -40,7 +40,6 @@ int currentSpeed = 0;
 
 // Таймеры и флаги
 bool powerState = false;
-bool magnetState = false;
 bool startPowerMake = false;
 unsigned long powerStartTime = 0;
 unsigned long magnetDelayStart = 0;
@@ -81,7 +80,7 @@ void setup() {
   pinMode(motorPWD1, OUTPUT);
   pinMode(motorPWD2, OUTPUT);
   pinMode(powerPin, OUTPUT);
-  pinMode(magnetPin, OUTPUT);
+  pinMode(unlockMagnetPin, OUTPUT);
   
   pinMode(ledPin, OUTPUT);
   
@@ -92,12 +91,9 @@ void setup() {
   analogWrite(motorPWD2, 0);
   digitalWrite(powerPin, powerRelayLOW);
   
+  digitalWrite(unlockMagnetPin, magnetRelayLOW);
   // Проверка начального положения ворот
   if(digitalRead(closeLimitSwitch) == HIGH) {
-    Serial.println("magnit false");
-    digitalWrite(magnetPin, magnetRelayLOW);
-    magnetState = false;
-
     isStartFromLimitSwitch = true;
   }else if(digitalRead(openLimitSwitch) == HIGH) {
     moveTime = fullOpenTime;
@@ -187,13 +183,8 @@ void handleButton() {
               startClosing();
             }
             else if(previewState == CLOSING) {
-              if(!magnetState) {
-                digitalWrite(magnetPin, !magnetRelayLOW);
-                magnetState = false;
-                magnetDelayStart = millis();
-              } else {
-                startOpening();
-              }
+              digitalWrite(unlockMagnetPin, !magnetRelayLOW);
+              magnetDelayStart = millis();
             }
             startPowerMake = false;
           }else{
@@ -227,13 +218,8 @@ void checkAfterClick() {
       startClosing();
     }
     else if(previewState == CLOSING) {
-      if(!magnetState) {
-        //digitalWrite(magnetPin, !magnetRelayLOW);
-        magnetState = false;
-        magnetDelayStart = millis();
-      } else {
-        startOpening();
-      }
+      digitalWrite(unlockMagnetPin, !magnetRelayLOW);
+      magnetDelayStart = millis();
     }
     startPowerMake = false;
   }
@@ -241,8 +227,8 @@ void checkAfterClick() {
 
 void checkMagnetDelay() {
   if(digitalRead(closeLimitSwitch) == HIGH && magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
+    digitalWrite(unlockMagnetPin, magnetRelayLOW);
     magnetDelayStart = 0;
-    digitalWrite(magnetPin, magnetRelayLOW);
     startOpening();
   }
 }
@@ -268,14 +254,12 @@ void checkLimitSwitches() {
   if(digitalRead(closeLimitSwitch) == HIGH && currentState == CLOSING) {
     Serial.println("CloseLimitSwitch");
     lastActivityTime = millis();
-    digitalWrite(magnetPin, magnetRelayLOW);
-    magnetState = false;
         
     moveTime = 0;
     isStartFromLimitSwitch = true;
     
     minSpeed = 0;
-    maxSpeed = 20;
+    // maxSpeed = 20;
     startStopping();
   }
 }
@@ -349,8 +333,6 @@ void startClosing() {
     minSpeed = 0;
     maxSpeed = maxSpeedConst;
     currentSpeed = 0;
-    digitalWrite(magnetPin, magnetRelayLOW);
-    magnetState = false;
   }
 }
 
