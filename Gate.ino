@@ -1,8 +1,8 @@
-// VERSION 3.3.5
+// VERSION 3.3.7
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = LOW;    // LOW or HIGH
-const bool magnetRelayLOW = LOW;    // LOW or HIGH
+const bool magnetRelayLOW = HIGH;    // LOW or HIGH
 const int maxSpeedConst = 204;
 const int minSpeedConst = 0;
 
@@ -24,7 +24,7 @@ const int ledPin = 13;
 // Настройки параметры
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
-  MAGNET_DELAY = 1000,          // 2 секунда задержки после магнита
+  MAGNET_DELAY = 1000,          // 1 секунда задержки после магнита
   INACTIVITY_TIMEOUT = 17000,   // 30 секунд неактивности
   accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
 int maxSpeed = 255;
@@ -94,9 +94,9 @@ void setup() {
   
   // Проверка начального положения ворот
   if(digitalRead(closeLimitSwitch) == HIGH) {
-    Serial.println("magnit true");
-    digitalWrite(magnetPin, !magnetRelayLOW);
-    magnetState = true;
+    Serial.println("magnit false");
+    digitalWrite(magnetPin, magnetRelayLOW);
+    magnetState = false;
 
     isStartFromLimitSwitch = true;
   }else if(digitalRead(openLimitSwitch) == HIGH) {
@@ -187,8 +187,8 @@ void handleButton() {
               startClosing();
             }
             else if(previewState == CLOSING) {
-              if(magnetState) {
-                digitalWrite(magnetPin, magnetRelayLOW);
+              if(!magnetState) {
+                digitalWrite(magnetPin, !magnetRelayLOW);
                 magnetState = false;
                 magnetDelayStart = millis();
               } else {
@@ -227,8 +227,8 @@ void checkAfterClick() {
       startClosing();
     }
     else if(previewState == CLOSING) {
-      if(magnetState) {
-        digitalWrite(magnetPin, magnetRelayLOW);
+      if(!magnetState) {
+        //digitalWrite(magnetPin, !magnetRelayLOW);
         magnetState = false;
         magnetDelayStart = millis();
       } else {
@@ -240,8 +240,9 @@ void checkAfterClick() {
 }
 
 void checkMagnetDelay() {
-  if(magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
+  if(digitalRead(closeLimitSwitch) == HIGH && magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
     magnetDelayStart = 0;
+    digitalWrite(magnetPin, magnetRelayLOW);
     startOpening();
   }
 }
@@ -267,8 +268,8 @@ void checkLimitSwitches() {
   if(digitalRead(closeLimitSwitch) == HIGH && currentState == CLOSING) {
     Serial.println("CloseLimitSwitch");
     lastActivityTime = millis();
-    digitalWrite(magnetPin, !magnetRelayLOW);
-    magnetState = true;
+    digitalWrite(magnetPin, magnetRelayLOW);
+    magnetState = false;
         
     moveTime = 0;
     isStartFromLimitSwitch = true;
