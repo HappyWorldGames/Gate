@@ -1,4 +1,4 @@
-// VERSION 3.3.7
+// VERSION 3.3.8
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = LOW;    // LOW or HIGH
@@ -226,7 +226,7 @@ void checkAfterClick() {
 }
 
 void checkMagnetDelay() {
-  if(digitalRead(closeLimitSwitch) == HIGH && magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
+  if(digitalRead(closeLimitSwitch) == LOW && magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
     digitalWrite(unlockMagnetPin, magnetRelayLOW);
     magnetDelayStart = 0;
     startOpening();
