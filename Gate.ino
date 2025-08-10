@@ -1,4 +1,4 @@
-// VERSION 3.3.8
+// VERSION 3.3.9
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = LOW;    // LOW or HIGH
@@ -95,6 +95,7 @@ void setup() {
   // Проверка начального положения ворот
   if(digitalRead(closeLimitSwitch) == HIGH) {
     isStartFromLimitSwitch = true;
+    previewState = CLOSING;
   }else if(digitalRead(openLimitSwitch) == HIGH) {
     moveTime = fullOpenTime;
     isStartFromLimitSwitch = true;
@@ -114,7 +115,7 @@ void loop() {
   updateMotorSpeed();
   checkInactivity();
   
-  if(millis() - notSleepTime > 1000) {
+  if(millis() - notSleepTime > 5000) {
     Serial.println("Not Sleep!");
     Serial.print("Open limit: ");
     Serial.println(digitalRead(openLimitSwitch));
@@ -185,6 +186,16 @@ void handleButton() {
             else if(previewState == CLOSING) {
               digitalWrite(unlockMagnetPin, !magnetRelayLOW);
               magnetDelayStart = millis();
+              delay(500);
+              digitalWrite(unlockMagnetPin, magnetRelayLOW);
+
+              digitalWrite(motorEN1, HIGH);
+              digitalWrite(motorEN2, HIGH);
+              analogWrite(motorPWD1, 204);
+              delay(50);
+              digitalWrite(motorEN1, LOW);
+              digitalWrite(motorEN2, LOW);
+              analogWrite(motorPWD1, 0);
             }
             startPowerMake = false;
           }else{
@@ -220,6 +231,16 @@ void checkAfterClick() {
     else if(previewState == CLOSING) {
       digitalWrite(unlockMagnetPin, !magnetRelayLOW);
       magnetDelayStart = millis();
+      delay(500);
+      digitalWrite(unlockMagnetPin, magnetRelayLOW);
+      digitalWrite(motorEN1, HIGH);
+      digitalWrite(motorEN2, HIGH);
+      analogWrite(motorPWD1, 204);
+      delay(50);
+      digitalWrite(motorEN1, LOW);
+      digitalWrite(motorEN2, LOW);
+      analogWrite(motorPWD1, 0);
+
     }
     startPowerMake = false;
   }
@@ -227,7 +248,6 @@ void checkAfterClick() {
 
 void checkMagnetDelay() {
   if(digitalRead(closeLimitSwitch) == LOW && magnetDelayStart > 0 && (millis() - magnetDelayStart >= MAGNET_DELAY)) {
-    digitalWrite(unlockMagnetPin, magnetRelayLOW);
     magnetDelayStart = 0;
     startOpening();
   }
@@ -259,7 +279,7 @@ void checkLimitSwitches() {
     isStartFromLimitSwitch = true;
     
     minSpeed = 0;
-    // maxSpeed = 20;
+    maxSpeed = 20;
     startStopping();
   }
 }
