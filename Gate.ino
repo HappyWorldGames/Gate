@@ -1,9 +1,9 @@
-// VERSION 3.3.9
+// VERSION 3.4.1
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = LOW;    // LOW or HIGH
 const bool magnetRelayLOW = HIGH;    // LOW or HIGH
-const int maxSpeedConst = 204;
+const int maxSpeedConst = 178; //204;
 const int minSpeedConst = 0;
 
 // Пины
@@ -184,18 +184,26 @@ void handleButton() {
               startClosing();
             }
             else if(previewState == CLOSING) {
-              digitalWrite(unlockMagnetPin, !magnetRelayLOW);
-              magnetDelayStart = millis();
-              delay(500);
-              digitalWrite(unlockMagnetPin, magnetRelayLOW);
-
               digitalWrite(motorEN1, HIGH);
-              digitalWrite(motorEN2, HIGH);
-              analogWrite(motorPWD1, 204);
-              delay(50);
-              digitalWrite(motorEN1, LOW);
-              digitalWrite(motorEN2, LOW);
-              analogWrite(motorPWD1, 0);
+      digitalWrite(motorEN2, HIGH);
+      analogWrite(motorPWD2, maxSpeedConst);
+      delay(25);
+      digitalWrite(motorEN1, LOW);
+      digitalWrite(motorEN2, LOW);
+      analogWrite(motorPWD2, 0);
+            
+      digitalWrite(unlockMagnetPin, !magnetRelayLOW);
+      magnetDelayStart = millis();
+      delay(500);
+      digitalWrite(unlockMagnetPin, magnetRelayLOW);
+      
+      digitalWrite(motorEN1, HIGH);
+      digitalWrite(motorEN2, HIGH);
+      analogWrite(motorPWD1, maxSpeedConst);
+      delay(25);
+      digitalWrite(motorEN1, LOW);
+      digitalWrite(motorEN2, LOW);
+      analogWrite(motorPWD1, 0);
             }
             startPowerMake = false;
           }else{
@@ -229,18 +237,26 @@ void checkAfterClick() {
       startClosing();
     }
     else if(previewState == CLOSING) {
+      digitalWrite(motorEN1, HIGH);
+      digitalWrite(motorEN2, HIGH);
+      analogWrite(motorPWD2, maxSpeedConst);
+      delay(25);
+      digitalWrite(motorEN1, LOW);
+      digitalWrite(motorEN2, LOW);
+      analogWrite(motorPWD2, 0);
+            
       digitalWrite(unlockMagnetPin, !magnetRelayLOW);
       magnetDelayStart = millis();
       delay(500);
       digitalWrite(unlockMagnetPin, magnetRelayLOW);
+      
       digitalWrite(motorEN1, HIGH);
       digitalWrite(motorEN2, HIGH);
-      analogWrite(motorPWD1, 204);
-      delay(50);
+      analogWrite(motorPWD1, maxSpeedConst);
+      delay(25);
       digitalWrite(motorEN1, LOW);
       digitalWrite(motorEN2, LOW);
       analogWrite(motorPWD1, 0);
-
     }
     startPowerMake = false;
   }
@@ -255,7 +271,8 @@ void checkMagnetDelay() {
 
 void checkLimitSwitches() {
   if (digitalRead(magnetLimitSwitch) == LOW && currentState == OPENING) {
-    minSpeed = 76;
+    Serial.println('Smooth');
+    minSpeed = 51; //76;
     startStopping();
   }
   // Обработка концевика открытия
