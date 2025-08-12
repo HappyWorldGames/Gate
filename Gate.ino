@@ -1,9 +1,9 @@
-// VERSION 3.4.1
+// VERSION 3.4.2
 
 // Для легкой настройки обратный реле
 const bool powerRelayLOW = LOW;    // LOW or HIGH
 const bool magnetRelayLOW = HIGH;    // LOW or HIGH
-const int maxSpeedConst = 178; //204;
+const int maxSpeedConst = 153; //178; //204;
 const int minSpeedConst = 0;
 
 // Пины
