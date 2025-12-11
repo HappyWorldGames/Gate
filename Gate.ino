@@ -63,7 +63,56 @@ bool endStopKnown = false;          // Флаг калибровки
 float rpmBuffer[RPM_FILTER_SAMPLES];
 int rpmIndex = 0;
 
-// ========== ФУНКЦИИ ПОДСЧЁТА ОБОРОТОВ ==========
+// ========== СТАРЫЕ ПАРАМЕТРЫ (МОГУТ НЕ ИСПОЛЬЗОВАТЬСЯ) ==========
+// Настройки параметры
+const unsigned long 
+  MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
+  MAGNET_DELAY = 500,          // 0.5 секунда задержки после магнита
+  INACTIVITY_TIMEOUT = 17000,   // 30 секунд неактивности
+  accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
+// int maxSpeed = 255; // Не используется
+// int minSpeed = 0;   // Не используется
+// const int accelerationStep = 5; // Шаг разгона - не используется
+// int currentSpeed = 0; // Не используется
+
+// Состояние управления - ОБЪЯВЛЕНО РАНЬШЕ
+enum State { STOP, OPENING, CLOSING };
+State currentState = STOP;
+State previewState = OPENING;
+// bool isStopping = false; // Не используется
+
+// Таймеры и флаги
+bool powerState = false;
+bool startPowerMake = false;
+unsigned long powerStartTime = 0;
+unsigned long magnetDelayStart = 0;
+unsigned long lastActivityTime = 0;
+
+unsigned long notSleepTime = 0;
+bool ledState = false;
+
+// Для остановки по времени
+bool isTimeStopping = false;
+bool isStartFromLimitSwitch = false;
+bool isNotLimitSwitch = false;
+long fullOpenTime = 8000;   // Время нужное для открытия ворот
+// unsigned long fullCloseTime = 0;  //  Время нужное для закрытия ворот
+long moveTime = 0;       // Время в пути
+long tempMoveTime = 0;   // Для прибовления времени
+State previewStateTime = previewState;
+
+// Антидребезг кнопки
+int buttonState;
+int lastButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50;
+
+// unsigned long lastAccelTime = 0; // Не используется
+
+// ========== ФУНКЦИИ ==========
+// (Функции идут после объявления всех необходимых переменных и типов)
+
+// Функции ПОДСЧЁТА ОБОРОТОВ
 
 // Прерывание для магнитного датчика
 void rpmSensorInterrupt() {
@@ -211,52 +260,6 @@ void setTargetRPM(float rpm) {
   targetRPM = rpm;
   integral = 0; // Сброс интеграла для плавности
 }
-
-// ========== СТАРЫЕ ПАРАМЕТРЫ (МОГУТ НЕ ИСПОЛЬЗОВАТЬСЯ) ==========
-// Настройки параметры
-const unsigned long 
-  MOTOR_DELAY = 2000,           // 2 секунды задержки двигателя
-  MAGNET_DELAY = 500,          // 0.5 секунда задержки после магнита
-  INACTIVITY_TIMEOUT = 17000,   // 30 секунд неактивности
-  accelerationInterval = 50;    // Каждые 50 мс, обновлять скорость
-// int maxSpeed = 255; // Не используется
-// int minSpeed = 0;   // Не используется
-// const int accelerationStep = 5; // Шаг разгона - не используется
-// int currentSpeed = 0; // Не используется
-
-// Состояние управления
-enum State { STOP, OPENING, CLOSING };
-State currentState = STOP;
-State previewState = OPENING;
-// bool isStopping = false; // Не используется
-
-// Таймеры и флаги
-bool powerState = false;
-bool startPowerMake = false;
-unsigned long powerStartTime = 0;
-unsigned long magnetDelayStart = 0;
-unsigned long lastActivityTime = 0;
-
-unsigned long notSleepTime = 0;
-bool ledState = false;
-
-// Для остановки по времени
-bool isTimeStopping = false;
-bool isStartFromLimitSwitch = false;
-bool isNotLimitSwitch = false;
-long fullOpenTime = 8000;   // Время нужное для открытия ворот
-// unsigned long fullCloseTime = 0;  //  Время нужное для закрытия ворот
-long moveTime = 0;       // Время в пути
-long tempMoveTime = 0;   // Для прибовления времени
-State previewStateTime = previewState;
-
-// Антидребезг кнопки
-int buttonState;
-int lastButtonState = HIGH;
-unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 50;
-
-// unsigned long lastAccelTime = 0; // Не используется
 
 void setup() {
   Serial.begin(9600);
