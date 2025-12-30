@@ -1,4 +1,4 @@
-// VERSION 3.5.3
+// VERSION 3.5.4
 
 // Для легкой настройки реле (HIGH/LOW для включения)
 const bool powerRelayLOW = LOW;    // Состояние реле питания двигателя для ВЫКЛ
@@ -21,14 +21,14 @@ const int ledPin = 13;
 
 // ========== ПАРАМЕТРЫ ДВИЖЕНИЯ И RPM ==========
 // Параметры мотора
-const int MIN_RPM_POWER = 40;        // Минимальная мощность ПИД-регулятора (ШИМ 0-255)
+const int MIN_RPM_POWER = 10;        // Минимальная мощность ПИД-регулятора (ШИМ 0-255)
 const int MAX_RPM_POWER = 100;      // Максимальная мощность ПИД-регулятора (%)
-const float MIN_RPM_SPEED = 1000;   // Целевая скорость "въезда" в концевик (обороты в минуту)
-const float TARGET_RPM = 6000.0;      // Базовая целевая скорость движения (обороты в минуту)
+const float MIN_RPM_SPEED = 60;   // Целевая скорость "въезда" в концевик (обороты в минуту)
+const float TARGET_RPM = 120.0;      // Базовая целевая скорость движения (обороты в минуту)
 
 // Параметры датчика оборотов
 const int MAGNETS_COUNT = 1;        // Количество магнитов на валу
-const unsigned long DEBOUNCE_TIME = 500; // Защита от дребезга датчика (мкс)
+const unsigned long DEBOUNCE_TIME = 5; // Защита от дребезга датчика (мкс)
 
 // Параметры расстояния (импульсы от одного концевика до другого)
 const unsigned long PULSES_CLOSE_TO_OPEN = 19; // Примерное значение, нужно установить реальное
@@ -43,18 +43,18 @@ double Kp = 0.0005, Ki = 0.00001, Kd = 0.0000010; // 0.8, 0.2, 0.05
 // Параметры времени
 const unsigned long LATCH_DELAY = 1000;        // Время удержания сигнала на защёлке (мс)
 const unsigned long PUSH_DELAY = 100;          // Время краткого толчка (мс)
-const unsigned long RAMP_UP_TIME = 500;      // Время плавного разгона (мс)
+const unsigned long RAMP_UP_TIME = 2000;      // Время плавного разгона (мс)
 const unsigned long LATCH_WAIT_TIMEOUT = 2000; // Таймаут ожидания отхода концевика (мс)
 
-// ========== ПЕРЕМЕННЫЕ ДЛЯ RPM И ПИД ==========0
+// ========== ПЕРЕМЕННЫЕ ДЛЯ RPM И ПИД ==========
+bool isStartFromLimitSwitch = false;
 volatile unsigned long lastPulseTime = 0;
 volatile unsigned long pulseInterval = 0;
-volatile bool newPulse = false;
+volatile unsigned int newPulse = 0;
+volatile unsigned long bufferLastPulseTime = 0;
 
 // Счётчики
-volatile unsigned long totalPulses = 0;    // Всего импульсов
 volatile unsigned long sessionPulses = 0;  // Импульсы в сессии (от концевика до концевика)
-volatile unsigned long totalRevolutions = 0; // Полные обороты
 
 float currentRPM = 0;      // Текущие обороты
 float targetRPM = 0.0;     // Целевые обороты (0 = остановка)
@@ -77,8 +77,7 @@ bool isRamping = false;
 // ========== ПЕРЕМЕННЫЕ СТАРОЙ СИСТЕМЫ (для совместимости, могут быть не нужны) ==========
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки перед основным движением
-  MAGNET_DELAY = 500,           // 0.5 секунды задержки (не используется в новой логике)
-  INACTIVITY_TIMEOUT = 20000;   // 17 секунд неактивности
+  INACTIVITY_TIMEOUT = 20000;   // 20 секунд неактивности
 
 // Состояние управления
 enum State { STOP, OPENING, CLOSING };
@@ -94,15 +93,6 @@ unsigned long lastActivityTime = 0;
 unsigned long notSleepTime = 0;
 bool ledState = false;
 
-// Для остановки по времени (не используется)
-bool isTimeStopping = false;
-bool isStartFromLimitSwitch = false;
-bool isNotLimitSwitch = false;
-long fullOpenTime = 8000;   // Не используется
-long moveTime = 0;          // Не используется
-long tempMoveTime = 0;      // Не используется
-State previewStateTime = previewState; // Не используется
-
 // Антидребезг кнопки
 int buttonState = HIGH;
 int lastButtonState = HIGH;
@@ -115,47 +105,28 @@ unsigned long latchWaitStart = 0; // Время начала ожидания
 
 // ========== ФУНКЦИИ ПОДСЧЁТА ОБОРОТОВ ==========
 void rpmSensorInterrupt() {
-  unsigned long currentTime = micros();
+  unsigned long currentTime = millis();
   unsigned long interval = currentTime - lastPulseTime;
 
   if (interval > DEBOUNCE_TIME) {
     pulseInterval = interval;
     lastPulseTime = currentTime;
-    newPulse = true;
+    if (newPulse == 0) bufferLastPulseTime = currentTime;
+    newPulse++;
 
-    totalPulses++;
     sessionPulses++;
-
-    if (totalPulses % MAGNETS_COUNT == 0) {
-      totalRevolutions++;
-    }
   }
 }
 
 float calculateRPM() {
-  if (newPulse) {
-    newPulse = false;
-
-    if (pulseInterval > 0) {
-      float instantRPM = 60000000.0 / (pulseInterval * MAGNETS_COUNT);
-
-      rpmBuffer[rpmIndex] = instantRPM;
-      rpmIndex = (rpmIndex + 1) % RPM_FILTER_SAMPLES;
-
-      float sum = 0;
-      int count = 0;
-      for (int i = 0; i < RPM_FILTER_SAMPLES; i++) {
-        if (rpmBuffer[i] > 0) {
-          sum += rpmBuffer[i];
-          count++;
-        }
-      }
-
-      currentRPM = (count > 0) ? (sum / count) : 0;
+  if (newPulse > 0) {
+    if (bufferLastPulseTime > 0) {
+      currentRPM = (newPulse / bufferLastPulseTime) * 60000;
     }
+    newPulse = 0;
   }
 
-  if (micros() - lastPulseTime > 2000000) {
+  if (millis() - lastPulseTime > 2000) {
     currentRPM = 0;
   }
 
@@ -170,9 +141,11 @@ unsigned long getSessionPulses() {
 }
 
 void resetSessionCounter() {
-  noInterrupts();
-  sessionPulses = 0;
-  interrupts();
+  if (digitalRead(closeLimitSwitch) == HIGH || digitalRead(openLimitSwitch) == HIGH) {
+    noInterrupts();
+    sessionPulses = 0;
+    interrupts();
+  }
 }
 
 // ========== ФУНКЦИИ УПРАВЛЕНИЯ RPM И ПИД ==========
@@ -250,12 +223,17 @@ void setMotorPowerPercent(float powerPercent) {
   analogWrite(motorPWD2, currentState == CLOSING ? pwmValue : 0);
 }
 
-void setTargetRPM(float rpm) {
+void setTargetRPM(float rpm, bool slowly = false) {
   if (rpm == targetRPM) return; // Не меняем, если значение не изменилось
 
   if (targetRPM == 0 && rpm != 0) {
     // Начало движения - плавный старт
     rampStartRPM = 0;
+    rampTargetRPM = rpm;
+    rampStartTime = millis();
+    isRamping = true;
+  } else if (slowly) {
+    rampStartRPM = currentRPM;
     rampTargetRPM = rpm;
     rampStartTime = millis();
     isRamping = true;
@@ -297,7 +275,13 @@ void handleButton() {
       if (buttonState == LOW) {
         Serial.println("Click");
         lastActivityTime = millis();
-        waitingForLatch = false;
+        
+        if (waitingForLatch) {
+            Serial.println("Click during latch wait - stopping.");
+            waitingForLatch = false; // Прерываем ожидание
+            startStopping(); // Останавливаем систему
+            return; // Выходим из функции, не выполняя остальной логики
+        }
 
         if (currentState == STOP) {
           if (!powerState) {
