@@ -1,4 +1,4 @@
-// VERSION 3.5.4
+// VERSION 3.5.5
 
 // Для легкой настройки реле (HIGH/LOW для включения)
 const bool powerRelayLOW = LOW;    // Состояние реле питания двигателя для ВЫКЛ
@@ -21,24 +21,24 @@ const int ledPin = 13;
 
 // ========== ПАРАМЕТРЫ ДВИЖЕНИЯ И RPM ==========
 // Параметры мотора
-const int MIN_RPM_POWER = 10;        // Минимальная мощность ПИД-регулятора (ШИМ 0-255)
+const int MIN_RPM_POWER = 20;        // Минимальная мощность ПИД-регулятора (%)
 const int MAX_RPM_POWER = 100;      // Максимальная мощность ПИД-регулятора (%)
-const float MIN_RPM_SPEED = 60;   // Целевая скорость "въезда" в концевик (обороты в минуту)
-const float TARGET_RPM = 120.0;      // Базовая целевая скорость движения (обороты в минуту)
+const float MIN_RPM_SPEED = 1000;   // Целевая скорость "въезда" в концевик (обороты в минуту)
+const float TARGET_RPM = 3000.0;      // Базовая целевая скорость движения (обороты в минуту)
 
 // Параметры датчика оборотов
 const int MAGNETS_COUNT = 1;        // Количество магнитов на валу
-const unsigned long DEBOUNCE_TIME = 5; // Защита от дребезга датчика (мкс)
+const unsigned long DEBOUNCE_TIME = 500; // Защита от дребезга датчика (мкс)
 
 // Параметры расстояния (импульсы от одного концевика до другого)
 const unsigned long PULSES_CLOSE_TO_OPEN = 19; // Примерное значение, нужно установить реальное
 const unsigned long PULSES_OPEN_TO_CLOSE = 20; // Примерное значение, нужно установить реальное
 
 // Настройки замедления
-const float MIN_DISTANCE_TO_SLOWDOWN = 0.3; // Начинать замедление, когда осталось 20% пути
+const float MIN_DISTANCE_TO_SLOWDOWN = 0.2; // Начинать замедление, когда осталось 20% пути
 
 // ПИД коэффициенты (настраиваются)
-double Kp = 0.0005, Ki = 0.00001, Kd = 0.0000010; // 0.8, 0.2, 0.05
+double Kp = 0.0005, Ki = 0.00001, Kd = 0.00001; // 0.8, 0.2, 0.05
 
 // Параметры времени
 const unsigned long LATCH_DELAY = 1000;        // Время удержания сигнала на защёлке (мс)
@@ -46,15 +46,15 @@ const unsigned long PUSH_DELAY = 100;          // Время краткого т
 const unsigned long RAMP_UP_TIME = 2000;      // Время плавного разгона (мс)
 const unsigned long LATCH_WAIT_TIMEOUT = 2000; // Таймаут ожидания отхода концевика (мс)
 
-// ========== ПЕРЕМЕННЫЕ ДЛЯ RPM И ПИД ==========
-bool isStartFromLimitSwitch = false;
+// ========== ПЕРЕМЕННЫЕ ДЛЯ RPM И ПИД ==========0
 volatile unsigned long lastPulseTime = 0;
 volatile unsigned long pulseInterval = 0;
-volatile unsigned int newPulse = 0;
-volatile unsigned long bufferLastPulseTime = 0;
+volatile bool newPulse = false;
 
 // Счётчики
+volatile unsigned long totalPulses = 0;    // Всего импульсов
 volatile unsigned long sessionPulses = 0;  // Импульсы в сессии (от концевика до концевика)
+volatile unsigned long totalRevolutions = 0; // Полные обороты
 
 float currentRPM = 0;      // Текущие обороты
 float targetRPM = 0.0;     // Целевые обороты (0 = остановка)
@@ -64,7 +64,7 @@ float motorPowerPercent = 0.0;   // Текущая мощность (0-100%)
 float error = 0, lastError = 0, integral = 0, derivative = 0;
 
 // Фильтр RPM
-#define RPM_FILTER_SAMPLES 5
+#define RPM_FILTER_SAMPLES 3
 float rpmBuffer[RPM_FILTER_SAMPLES];
 int rpmIndex = 0;
 
@@ -77,7 +77,8 @@ bool isRamping = false;
 // ========== ПЕРЕМЕННЫЕ СТАРОЙ СИСТЕМЫ (для совместимости, могут быть не нужны) ==========
 const unsigned long 
   MOTOR_DELAY = 2000,           // 2 секунды задержки перед основным движением
-  INACTIVITY_TIMEOUT = 20000;   // 20 секунд неактивности
+  MAGNET_DELAY = 500,           // 0.5 секунды задержки (не используется в новой логике)
+  INACTIVITY_TIMEOUT = 30000;   // 17 секунд неактивности
 
 // Состояние управления
 enum State { STOP, OPENING, CLOSING };
@@ -93,6 +94,15 @@ unsigned long lastActivityTime = 0;
 unsigned long notSleepTime = 0;
 bool ledState = false;
 
+// Для остановки по времени (не используется)
+bool isTimeStopping = false;
+bool isStartFromLimitSwitch = false;
+bool isNotLimitSwitch = false;
+long fullOpenTime = 8000;   // Не используется
+long moveTime = 0;          // Не используется
+long tempMoveTime = 0;      // Не используется
+State previewStateTime = previewState; // Не используется
+
 // Антидребезг кнопки
 int buttonState = HIGH;
 int lastButtonState = HIGH;
@@ -105,28 +115,47 @@ unsigned long latchWaitStart = 0; // Время начала ожидания
 
 // ========== ФУНКЦИИ ПОДСЧЁТА ОБОРОТОВ ==========
 void rpmSensorInterrupt() {
-  unsigned long currentTime = millis();
+  unsigned long currentTime = micros();
   unsigned long interval = currentTime - lastPulseTime;
 
   if (interval > DEBOUNCE_TIME) {
     pulseInterval = interval;
     lastPulseTime = currentTime;
-    if (newPulse == 0) bufferLastPulseTime = currentTime;
-    newPulse++;
+    newPulse = true;
 
+    totalPulses++;
     sessionPulses++;
+
+    if (totalPulses % MAGNETS_COUNT == 0) {
+      totalRevolutions++;
+    }
   }
 }
 
 float calculateRPM() {
-  if (newPulse > 0) {
-    if (bufferLastPulseTime > 0) {
-      currentRPM = (newPulse / bufferLastPulseTime) * 60000;
+  if (newPulse) {
+    newPulse = false;
+
+    if (pulseInterval > 0) {
+      float instantRPM = 60000000.0 / (pulseInterval * MAGNETS_COUNT);
+
+      rpmBuffer[rpmIndex] = instantRPM;
+      rpmIndex = (rpmIndex + 1) % RPM_FILTER_SAMPLES;
+
+      float sum = 0;
+      int count = 0;
+      for (int i = 0; i < RPM_FILTER_SAMPLES; i++) {
+        if (rpmBuffer[i] > 0) {
+          sum += rpmBuffer[i];
+          count++;
+        }
+      }
+
+      currentRPM = (count > 0) ? (sum / count) : 0;
     }
-    newPulse = 0;
   }
 
-  if (millis() - lastPulseTime > 2000) {
+  if (micros() - lastPulseTime > 2000000) {
     currentRPM = 0;
   }
 
@@ -141,11 +170,10 @@ unsigned long getSessionPulses() {
 }
 
 void resetSessionCounter() {
-  if (digitalRead(closeLimitSwitch) == HIGH || digitalRead(openLimitSwitch) == HIGH) {
-    noInterrupts();
-    sessionPulses = 0;
-    interrupts();
-  }
+  currentRPM = 0;
+  noInterrupts();
+  sessionPulses = 0;
+  interrupts();
 }
 
 // ========== ФУНКЦИИ УПРАВЛЕНИЯ RPM И ПИД ==========
@@ -233,10 +261,10 @@ void setTargetRPM(float rpm, bool slowly = false) {
     rampStartTime = millis();
     isRamping = true;
   } else if (slowly) {
-    rampStartRPM = currentRPM;
-    rampTargetRPM = rpm;
-    rampStartTime = millis();
-    isRamping = true;
+     rampStartRPM = currentRPM;
+     rampTargetRPM = rpm;
+     rampStartTime = millis();
+     isRamping = true;
   } else {
     // Просто устанавливаем новую цель
     targetRPM = rpm;
@@ -256,7 +284,10 @@ void updateRamp() {
         targetRPM = rampTargetRPM;
         isRamping = false;
     } else {
-        targetRPM = rampStartRPM + (rampTargetRPM - rampStartRPM) * (elapsed / rampDuration);
+        float progress = elapsed / rampDuration;
+        float rampedRPM = rampTargetRPM * progress * progress;
+        targetRPM = rampedRPM;
+        //targetRPM = rampStartRPM + (rampTargetRPM - rampStartRPM) * (elapsed / rampDuration);
     }
 }
 
@@ -282,7 +313,7 @@ void handleButton() {
             startStopping(); // Останавливаем систему
             return; // Выходим из функции, не выполняя остальной логики
         }
-
+        
         if (currentState == STOP) {
           if (!powerState) {
             digitalWrite(powerPin, !powerRelayLOW);
@@ -356,6 +387,7 @@ void checkInactivity() {
 
 void startOpening() {
   Serial.println("Try startOpening");
+  error = 0, lastError = 0, integral = 0, derivative = 0;
   // Проверяем, можно ли начать движение (не в нужном ли уже состоянии, не сработал ли концевик)
   if (currentState != OPENING && digitalRead(openLimitSwitch) == LOW) {
     Serial.println("Start Opening");
@@ -363,13 +395,13 @@ void startOpening() {
     digitalWrite(motorEN2, HIGH);
     currentState = OPENING;
     resetSessionCounter(); // Сбрасываем счётчик для нового движения
-    setTargetRPM(TARGET_RPM); // Устанавливаем целевую скорость с плавным стартом
+    setTargetRPM(TARGET_RPM, true); // Устанавливаем целевую скорость с плавным стартом
   }
 }
 
 void startOpeningWithLatch() {
     Serial.println("Try startOpeningWithLatch");
-    if (currentState != OPENING && digitalRead(openLimitSwitch) == LOW) {
+    if (currentState != OPENING && digitalRead(openLimitSwitch) == LOW && digitalRead(closeLimitSwitch) == HIGH) {
         Serial.println("Starting latch sequence");
         // 1. Толчок в сторону закрытия
         digitalWrite(motorEN1, HIGH);
@@ -394,19 +426,35 @@ void startOpeningWithLatch() {
         waitingForLatch = true;
         latchWaitStart = millis();
         Serial.println("Latch sequence done, waiting for switch to release.");
-    }
+    }else if (currentState != OPENING && digitalRead(openLimitSwitch) == LOW) startOpening();
 }
 
 void startClosing() {
   Serial.println("Try startClosing");
+    error = 0, lastError = 0, integral = 0, derivative = 0;
   if (currentState != CLOSING && digitalRead(closeLimitSwitch) == LOW) {
     Serial.println("Start Closing");
     digitalWrite(motorEN1, HIGH);
     digitalWrite(motorEN2, HIGH);
     currentState = CLOSING;
     resetSessionCounter(); // Сбрасываем счётчик для нового движения
-    setTargetRPM(TARGET_RPM); // Устанавливаем целевую скорость с плавным стартом
+    setTargetRPM(TARGET_RPM, true); // Устанавливаем целевую скорость с плавным стартом
     //targetRPM = TARGET_RPM;
+  }
+}
+
+void startStoppingSlowly() {
+    Serial.println("Try startStopping slowly");
+  if (currentState != STOP) {
+    Serial.println("Start Stopping");
+    setTargetRPM(0.0, true); // Плавно останавливаем двигатель через ПИД
+    Serial.println("Motor stopped.");
+    previewState = currentState; // Сохраняем направление, в котором остановились
+    currentState = STOP;
+    integral = 0;
+    isRamping = false; // Сброс плавного старта
+    resetSessionCounter(); // Сброс сессии при остановке у концевика
+    // После остановки устанавливаем состояние STOP в updateMotorSpeed
   }
 }
 
@@ -414,7 +462,7 @@ void startStopping() {
   Serial.println("Try startStopping");
   if (currentState != STOP) {
     Serial.println("Start Stopping");
-    setTargetRPM(0.0); // Плавно останавливаем двигатель через ПИД
+    setTargetRPM(0.0, true); // Плавно останавливаем двигатель через ПИД
     Serial.println("Motor stopped.");
     previewState = currentState; // Сохраняем направление, в котором остановились
     currentState = STOP;
@@ -507,7 +555,7 @@ void loop() {
     } else if (millis() - latchWaitStart > LATCH_WAIT_TIMEOUT) {
         Serial.println("ERROR: Latch wait timeout, close limit switch still active. Stopping.");
         waitingForLatch = false;
-        emergencyStop(); // просто вручную в STOP
+        startStopping(); // просто вручную в STOP
     }
     // Если нажата кнопка, waitingForLatch сбросится в handleButton/startStopping
   }
