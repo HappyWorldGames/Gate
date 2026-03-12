@@ -1,5 +1,5 @@
 // VERSION 4.2
-// Перед запуском в работы выставить значкения для PULSES_CLOSE и PULSES_OPEN, нужные цифры будут в логах.
+// Инструкция в файле GATE_TUNING_GUIDE.md
 
 const bool powerRelayLOW = LOW;
 const bool latchRelayLOW = HIGH;
@@ -24,13 +24,13 @@ const int OPEN_POWER_CRUISE = 38;  // крейсер (рассчитано из 
 const int OPEN_POWER_SLOW   = 35;  // замедление
 
 // Профиль мощности ЗАКРЫТИЕ
-const int CLOSE_POWER_KICK   = 55;  // стартовый пинок
+const int CLOSE_POWER_KICK   = 42;  // стартовый пинок
 const int CLOSE_POWER_CRUISE = 40;  // крейсер (попал точно в 15с по логам)
 const int CLOSE_POWER_SLOW   = 48;  // замедление + усилие для замка
 
 // Тайминги профиля
 const unsigned long KICK_MS       = 300;
-const unsigned long CLOSE_KICK_MS = 500;
+const unsigned long CLOSE_KICK_MS = 800;
 const unsigned long RAMP_UP_MS    = 2000;
 const float         SLOWDOWN_AT   = 0.22;
 
@@ -73,6 +73,7 @@ float powerOffset  = 0;
 
 bool waitingForLatch     = false;
 unsigned long latchWaitStart = 0;
+int latchAttempt = 0;
 
 bool isCalibrating = false;
 
@@ -267,6 +268,7 @@ void startOpeningWithLatch() {
     // 3. Ждём пока концевик закрытия отпустит
     waitingForLatch  = true;
     latchWaitStart   = millis();
+    latchAttempt     = 1;
     logEvent("LATCH_WAITING");
 
   } else if (currentState != OPENING && digitalRead(openLimitSwitch) == LOW) {
@@ -446,11 +448,27 @@ void loop() {
     if (digitalRead(closeLimitSwitch) == LOW) {
       logEvent("LATCH_OK");
       waitingForLatch = false;
+      latchAttempt    = 0;
       startOpening();
     } else if (millis() - latchWaitStart > LATCH_WAIT_TIMEOUT) {
-      logEvent("LATCH_TIMEOUT");
-      waitingForLatch = false;
-      startStopping();
+      if (latchAttempt < 2) {
+        // Повторная попытка
+        logEvent("LATCH_RETRY");
+        latchAttempt++;
+        digitalWrite(latchPin, !latchRelayLOW);
+        delay(LATCH_DELAY);
+        digitalWrite(latchPin, latchRelayLOW);
+        analogWrite(motorPWD1, 153);
+        delay(PUSH_DELAY);
+        analogWrite(motorPWD1, 0);
+        latchWaitStart = millis(); // сбрасываем таймер
+      } else {
+        // Две попытки — сдаёмся
+        logEvent("LATCH_FAILED");
+        waitingForLatch = false;
+        latchAttempt    = 0;
+        startStopping();
+      }
     }
   }
 
